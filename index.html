@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>REST vs GraphQL — Paper Benchmark</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:       #050709;
+  --s1:       #0b0e14;
+  --s2:       #111520;
+  --border:   #1c2130;
+  --rest:     #3ecfff;
+  --rest-dim: #1a4a5c;
+  --gql:      #ff5c8a;
+  --gql-dim:  #5c1a2e;
+  --gold:     #ffc857;
+  --green:    #3effa0;
+  --muted:    #3d4a5c;
+  --text:     #dce8f5;
+  --sub:      #6b7f96;
+  --mono:     'IBM Plex Mono', monospace;
+  --sans:     'DM Sans', sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* scanline overlay */
+body::after {
+  content:'';
+  position:fixed;inset:0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,.06) 2px,
+    rgba(0,0,0,.06) 4px
+  );
+  pointer-events:none;
+  z-index:9999;
+}
+
+/* ── layout ──────────────────────────────── */
+.shell { max-width:1280px; margin:0 auto; padding:0 28px 80px; }
+
+/* ── header ──────────────────────────────── */
+header {
+  padding: 36px 0 28px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+  display: flex; justify-content: space-between; align-items: flex-end;
+  flex-wrap: wrap; gap: 16px;
+}
+.h-left { display:flex; flex-direction:column; gap:6px; }
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 { font-size: clamp(22px,4vw,36px); font-weight:700; letter-spacing:-.02em; }
+h1 .r { color: var(--rest); }
+h1 .g { color: var(--gql); }
+.h-sub { font-size:12px; color: var(--sub); font-family: var(--mono); }
+
+.server-status { display:flex; gap:14px; }
+.ss {
+  font-family: var(--mono); font-size:11px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  display:flex; align-items:center; gap:7px;
+  color: var(--sub);
+}
+.ss .dot {
+  width:7px;height:7px;border-radius:50%;
+  background:var(--muted);
+  transition: background .3s;
+}
+.ss .dot.up   { background:var(--green); box-shadow:0 0 6px var(--green); }
+.ss .dot.down { background:var(--gql); }
+
+/* ── section titles ─────────────────────── */
+.sec-title {
+  font-family: var(--mono);
+  font-size:10px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color: var(--muted);
+  margin-bottom:14px;
+  display:flex; align-items:center; gap:10px;
+}
+.sec-title::after {
+  content:''; flex:1; height:1px; background: var(--border);
+}
+
+/* ── config panel ───────────────────────── */
+.config {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  padding: 20px 24px;
+  margin-bottom: 28px;
+}
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px,1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.cfg-item { display:flex; flex-direction:column; gap:6px; }
+.cfg-item label {
+  font-family:var(--mono); font-size:10px;
+  letter-spacing:.12em; text-transform:uppercase;
+  color: var(--sub);
+}
+select, input[type=number] {
+  font-family: var(--mono); font-size:12px;
+  background: var(--s2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 9px 12px;
+  outline:none;
+  transition: border-color .2s;
+  -webkit-appearance:none;
+  width:100%;
+}
+select:focus, input:focus { border-color: var(--muted); }
+
+.btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+.btn {
+  font-family: var(--mono); font-size:12px;
+  padding: 10px 22px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+  transition: all .2s;
+  letter-spacing:.06em;
+}
+.btn:hover { border-color: var(--muted); color: var(--text); }
+.btn.primary {
+  background: var(--text); color: var(--bg);
+  border-color: var(--text); font-weight:600;
+}
+.btn.primary:hover { background: var(--rest); border-color: var(--rest); }
+.btn.primary:disabled { opacity:.35; cursor:not-allowed; }
+.btn.stress { border-color: var(--gql-dim); color: var(--gql); }
+.btn.stress:hover { background: var(--gql-dim); border-color:var(--gql); }
+
+/* ── progress bar ───────────────────────── */
+.progress-wrap {
+  height:3px; background:var(--border); margin-bottom:28px;
+  display:none;
+}
+.progress-wrap.show { display:block; }
+.progress-fill {
+  height:100%; width:0; background: var(--rest);
+  transition: width .3s;
+}
+
+/* ── tier cards ─────────────────────────── */
+.tier-grid {
+  display:grid;
+  grid-template-columns: repeat(3,1fr);
+  gap:14px;
+  margin-bottom:28px;
+}
+@media(max-width:700px){ .tier-grid{grid-template-columns:1fr;} }
+
+.tier-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  padding:18px;
+  position:relative;
+  transition: border-color .3s;
+}
+.tier-card.active { border-color: var(--gold); }
+.tier-card.done-rest { border-left: 2px solid var(--rest); }
+.tier-card.done-gql  { border-right: 2px solid var(--gql); }
+
+.tier-label {
+  font-family:var(--mono); font-size:10px;
+  letter-spacing:.15em; text-transform:uppercase;
+  color: var(--muted); margin-bottom:8px;
+}
+.tier-name { font-size:13px; font-weight:600; margin-bottom:4px; }
+.tier-desc { font-size:11px; color:var(--sub); font-family:var(--mono); }
+
+.tier-results {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:8px; margin-top:14px;
+}
+.tr-col { padding:10px; background:var(--s2); border:1px solid var(--border); }
+.tr-col .tc-label {
+  font-family:var(--mono); font-size:9px;
+  letter-spacing:.12em; text-transform:uppercase;
+  color: var(--muted); margin-bottom:6px;
+}
+.tr-col.rest .tc-label { color: var(--rest); opacity:.7; }
+.tr-col.gql  .tc-label { color: var(--gql);  opacity:.7; }
+.tr-metric { font-family:var(--mono); font-size:18px; font-weight:600; margin-bottom:1px; }
+.tr-sub    { font-family:var(--mono); font-size:10px; color:var(--sub); }
+
+/* ── main metrics grid ──────────────────── */
+.metrics-grid {
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px,1fr));
+  gap:12px;
+  margin-bottom:28px;
+}
+.m-card {
+  background:var(--s1);
+  border:1px solid var(--border);
+  padding:16px 18px;
+}
+.m-card .m-label {
+  font-family:var(--mono); font-size:9px;
+  letter-spacing:.15em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:8px;
+}
+.m-card .m-vals { display:flex; gap:12px; align-items:flex-end; }
+.m-val {
+  display:flex; flex-direction:column; gap:1px;
+}
+.m-val .num {
+  font-family:var(--mono); font-size:22px; font-weight:600;
+  transition: color .4s;
+}
+.m-val .lbl { font-family:var(--mono); font-size:9px; letter-spacing:.1em; }
+.m-val.rest .lbl { color: var(--rest); }
+.m-val.gql  .lbl { color: var(--gql);  }
+.m-val.rest .num { color: var(--text); }
+.m-val.gql  .num { color: var(--text); }
+.m-val.winner .num { color: var(--green); }
+
+/* ── comparison bars ────────────────────── */
+.bar-section {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  padding:20px 24px;
+  margin-bottom:28px;
+}
+.bar-group { margin-bottom:18px; }
+.bar-group:last-child { margin-bottom:0; }
+.bg-label {
+  font-family:var(--mono); font-size:10px;
+  letter-spacing:.12em; text-transform:uppercase;
+  color:var(--sub); margin-bottom:8px;
+}
+.bar-row { display:flex; align-items:center; gap:10px; margin-bottom:5px; }
+.br-name {
+  font-family:var(--mono); font-size:10px;
+  width:50px; text-align:right;
+}
+.br-name.rest { color:var(--rest); }
+.br-name.gql  { color:var(--gql);  }
+.bar-track {
+  flex:1; height:22px;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  position:relative; overflow:hidden;
+}
+.bar-fill {
+  height:100%; width:0;
+  display:flex; align-items:center;
+  padding-left:10px;
+  font-family:var(--mono); font-size:10px; font-weight:600;
+  white-space:nowrap;
+  transition: width .7s cubic-bezier(.16,1,.3,1);
+}
+.bar-fill.rest { background: rgba(62,207,255,.2); color:var(--rest); border-right:2px solid var(--rest); }
+.bar-fill.gql  { background: rgba(255,92,138,.2); color:var(--gql);  border-right:2px solid var(--gql);  }
+
+/* ── p95 + throughput ───────────────────── */
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:28px; }
+@media(max-width:600px){ .two-col{grid-template-columns:1fr;} }
+
+.stat-panel {
+  background:var(--s1); border:1px solid var(--border); padding:18px 22px;
+}
+.sp-title { font-family:var(--mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); margin-bottom:14px; }
+.sp-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); }
+.sp-row:last-child { border-bottom:none; }
+.sp-key { font-family:var(--mono); font-size:11px; color:var(--sub); }
+.sp-val { font-family:var(--mono); font-size:13px; font-weight:600; }
+.sp-val.rest { color:var(--rest); }
+.sp-val.gql  { color:var(--gql);  }
+.sp-val.gold { color:var(--gold); }
+.sp-val.green { color:var(--green); }
+
+/* ── error rate ─────────────────────────── */
+.error-panel {
+  background:var(--s1); border:1px solid var(--border); padding:18px 22px; margin-bottom:28px;
+}
+.error-row { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+.error-row:last-child { margin-bottom:0; }
+.er-label { font-family:var(--mono); font-size:11px; width:80px; }
+.er-label.rest { color:var(--rest); }
+.er-label.gql  { color:var(--gql);  }
+.er-bar { flex:1; height:16px; background:var(--s2); border:1px solid var(--border); position:relative; overflow:hidden; }
+.er-fill {
+  height:100%; width:0;
+  transition: width .6s cubic-bezier(.16,1,.3,1);
+  display:flex; align-items:center; padding-left:8px;
+  font-family:var(--mono); font-size:9px; font-weight:600;
+}
+.er-fill.rest { background:rgba(62,207,255,.15); color:var(--rest); border-right:2px solid var(--rest); }
+.er-fill.gql  { background:rgba(255,92,138,.25); color:var(--gql);  border-right:2px solid var(--gql); }
+.er-num { font-family:var(--mono); font-size:12px; width:60px; text-align:right; }
+.er-num.rest { color:var(--rest); }
+.er-num.gql  { color:var(--gql);  }
+
+/* ── payload reduction ──────────────────── */
+.pr-panel {
+  background:var(--s1); border:1px solid var(--border); padding:18px 22px; margin-bottom:28px;
+}
+.pr-row { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+.pr-row:last-child{margin-bottom:0;}
+.pr-label { font-family:var(--mono); font-size:10px; color:var(--sub); width:130px; }
+.pr-track { flex:1; height:24px; background:var(--s2); border:1px solid var(--border); position:relative; overflow:hidden; }
+.pr-fill {
+  height:100%; width:0;
+  background: linear-gradient(90deg, rgba(255,200,87,.1), rgba(255,200,87,.3));
+  border-right:2px solid var(--gold);
+  display:flex; align-items:center; justify-content:flex-end; padding-right:8px;
+  font-family:var(--mono); font-size:10px; font-weight:600; color:var(--gold);
+  transition: width .8s cubic-bezier(.16,1,.3,1);
+  white-space:nowrap;
+}
+
+/* ── run log ────────────────────────────── */
+.log-panel {
+  background:var(--s1); border:1px solid var(--border);
+  margin-bottom:28px;
+}
+.log-header {
+  padding:12px 18px;
+  border-bottom:1px solid var(--border);
+  display:flex; justify-content:space-between; align-items:center;
+}
+.log-title { font-family:var(--mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); }
+.log-body {
+  font-family:var(--mono); font-size:11px; color:var(--sub);
+  padding:14px 18px; max-height:180px; overflow-y:auto;
+  line-height:1.8;
+}
+.log-body::-webkit-scrollbar{width:3px;}
+.log-body::-webkit-scrollbar-thumb{background:var(--border);}
+.log-line { margin-bottom:2px; }
+.log-line .ts { color:var(--muted); }
+.log-line .rest { color:var(--rest); }
+.log-line .gql  { color:var(--gql);  }
+.log-line .ok   { color:var(--green); }
+.log-line .warn { color:var(--gold); }
+.log-line .err  { color:var(--gql); }
+
+/* ── verdict ────────────────────────────── */
+.verdict {
+  display:grid; grid-template-columns: repeat(auto-fill,minmax(200px,1fr));
+  gap:12px; margin-bottom:28px;
+}
+.v-card {
+  background:var(--s1); border:1px solid var(--border); padding:16px 18px;
+}
+.v-dim { font-family:var(--mono); font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+.v-winner { font-size:14px; font-weight:700; }
+.v-detail { font-family:var(--mono); font-size:10px; color:var(--sub); margin-top:3px; }
+
+/* ── tooltip ─────────────────────────────── */
+.info {
+  display:inline-block; width:14px; height:14px; border-radius:50%;
+  border:1px solid var(--muted); color:var(--muted);
+  font-size:9px; text-align:center; line-height:14px;
+  cursor:help; margin-left:6px; vertical-align:middle;
+}
+
+/* ── loading state ─────────────────────── */
+.spin {
+  display:inline-block;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to{transform:rotate(360deg)} }
+
+/* ── footer ─────────────────────────────── */
+footer {
+  border-top:1px solid var(--border); padding:16px 0;
+  font-family:var(--mono); font-size:10px; color:var(--muted);
+  display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- HEADER -->
+<header>
+  <div class="h-left">
+    <span class="eyebrow">empirical benchmark · dummyjson.com</span>
+    <h1><span class="r">REST</span> vs <span class="g">GraphQL</span> — Paper Metrics</h1>
+    <span class="h-sub">mean latency · p95 · throughput · payload Pr · error rate · http calls</span>
+  </div>
+  <div class="server-status">
+    <div class="ss"><span class="dot" id="dotRest"></span>REST :3001</div>
+    <div class="ss"><span class="dot" id="dotGql"></span>GraphQL :3002</div>
+  </div>
+</header>
+
+<!-- CONFIG -->
+<div class="sec-title">Test Configuration</div>
+<div class="config">
+  <div class="config-grid">
+    <div class="cfg-item">
+      <label>Complexity Tier</label>
+      <select id="tier">
+        <option value="shallow">Tier 1 — Shallow (single user, id+name+email)</option>
+        <option value="relational">Tier 2 — Relational (user + orders/posts)</option>
+        <option value="nested" selected>Tier 3 — Nested (user + posts + todos)</option>
+        <option value="list">Products List (10 items)</option>
+        <option value="list-large">Products List (100 items)</option>
+        <option value="posts-list">Posts List (30 items)</option>
+      </select>
+    </div>
+    <div class="cfg-item">
+      <label>Concurrent Requests (VU sim)</label>
+      <select id="concurrency">
+        <option value="1">1 (baseline)</option>
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50 (stress)</option>
+        <option value="100">100 (high stress)</option>
+      </select>
+    </div>
+    <div class="cfg-item">
+      <label>Iterations per VU</label>
+      <select id="iterations">
+        <option value="1">1</option>
+        <option value="3" selected>3</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+    </div>
+    <div class="cfg-item">
+      <label>User ID (for user queries)</label>
+      <select id="userId">
+        <option value="1">1</option><option value="2">2</option>
+        <option value="3">3</option><option value="5">5</option>
+      </select>
+    </div>
+  </div>
+  <div class="btn-row">
+    <button class="btn primary" id="runBtn" onclick="runBenchmark()">▶ Run Benchmark</button>
+    <button class="btn" onclick="runAllTiers()">⚡ Run All 3 Tiers</button>
+    <button class="btn stress" onclick="runStress()">🔥 Stress Test (50 VU × 5)</button>
+    <button class="btn" onclick="clearResults()">↺ Clear</button>
+  </div>
+</div>
+
+<!-- PROGRESS -->
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-fill" id="progressFill"></div>
+</div>
+
+<!-- TIER RESULTS -->
+<div class="sec-title">Tier Results (Paper Table I)</div>
+<div class="tier-grid">
+  <div class="tier-card" id="tc1">
+    <div class="tier-label">Tier 1</div>
+    <div class="tier-name">Shallow</div>
+    <div class="tier-desc">1 REST GET · 1 GQL field-select</div>
+    <div class="tier-results" id="tr1">
+      <div class="tr-col rest"><div class="tc-label">REST</div><div class="tr-metric" id="t1rm">—</div><div class="tr-sub" id="t1rb">—</div></div>
+      <div class="tr-col gql"><div class="tc-label">GraphQL</div><div class="tr-metric" id="t1gm">—</div><div class="tr-sub" id="t1gb">—</div></div>
+    </div>
+  </div>
+  <div class="tier-card" id="tc2">
+    <div class="tier-label">Tier 2</div>
+    <div class="tier-name">Relational</div>
+    <div class="tier-desc">2 REST GETs · 1 GQL nested</div>
+    <div class="tier-results" id="tr2">
+      <div class="tr-col rest"><div class="tc-label">REST</div><div class="tr-metric" id="t2rm">—</div><div class="tr-sub" id="t2rb">—</div></div>
+      <div class="tr-col gql"><div class="tc-label">GraphQL</div><div class="tr-metric" id="t2gm">—</div><div class="tr-sub" id="t2gb">—</div></div>
+    </div>
+  </div>
+  <div class="tier-card" id="tc3">
+    <div class="tier-label">Tier 3</div>
+    <div class="tier-name">Nested</div>
+    <div class="tier-desc">3 REST GETs · 1 GQL nested</div>
+    <div class="tier-results" id="tr3">
+      <div class="tr-col rest"><div class="tc-label">REST</div><div class="tr-metric" id="t3rm">—</div><div class="tr-sub" id="t3rb">—</div></div>
+      <div class="tr-col gql"><div class="tc-label">GraphQL</div><div class="tr-metric" id="t3gm">—</div><div class="tr-sub" id="t3gb">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- CORE METRICS -->
+<div class="sec-title">Core Metrics — Latest Run</div>
+<div class="metrics-grid">
+  <div class="m-card">
+    <div class="m-label">Mean Latency <span class="info" title="Average response time across all requests">?</span></div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestMs">—</span><span class="lbl">REST ms</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlMs">—</span><span class="lbl">GQL ms</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">p95 Latency <span class="info" title="95th percentile — 95% of requests faster than this">?</span></div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestp95">—</span><span class="lbl">REST ms</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlp95">—</span><span class="lbl">GQL ms</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">Throughput (RPS) <span class="info" title="Requests per second — N / total_time">?</span></div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestRps">—</span><span class="lbl">REST</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlRps">—</span><span class="lbl">GQL</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">Payload Size <span class="info" title="Actual response body bytes received">?</span></div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestBytes">—</span><span class="lbl">REST</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlBytes">—</span><span class="lbl">GQL</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">Payload Reduction Pr <span class="info" title="(1 - GQL_size/REST_size) × 100%">?</span></div>
+    <div class="m-vals">
+      <div class="m-val winner"><span class="num" id="mPr">—</span><span class="lbl" style="color:var(--gold)">% saved</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">Error Rate <span class="info" title="HTTP 5xx or fetch failures / total requests">?</span></div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestErr">—</span><span class="lbl">REST %</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlErr">—</span><span class="lbl">GQL %</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">HTTP Round-trips <span class="info" title="Client-side HTTP calls required to assemble view">?</span></div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestCalls">—</span><span class="lbl">REST</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlCalls">—</span><span class="lbl">GQL</span></div>
+    </div>
+  </div>
+  <div class="m-card">
+    <div class="m-label">Min / Max Latency</div>
+    <div class="m-vals">
+      <div class="m-val rest"><span class="num" id="mRestMinMax" style="font-size:13px">—</span><span class="lbl">REST</span></div>
+      <div class="m-val gql"><span class="num" id="mGqlMinMax" style="font-size:13px">—</span><span class="lbl">GQL</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- BAR CHART -->
+<div class="sec-title">Latency Comparison</div>
+<div class="bar-section">
+  <div class="bar-group">
+    <div class="bg-label">Mean Latency (ms) — lower is better</div>
+    <div class="bar-row">
+      <div class="br-name rest">REST</div>
+      <div class="bar-track"><div class="bar-fill rest" id="barRestMs">—</div></div>
+    </div>
+    <div class="bar-row">
+      <div class="br-name gql">GQL</div>
+      <div class="bar-track"><div class="bar-fill gql" id="barGqlMs">—</div></div>
+    </div>
+  </div>
+  <div class="bar-group">
+    <div class="bg-label">p95 Latency (ms) — lower is better</div>
+    <div class="bar-row">
+      <div class="br-name rest">REST</div>
+      <div class="bar-track"><div class="bar-fill rest" id="barRestp95">—</div></div>
+    </div>
+    <div class="bar-row">
+      <div class="br-name gql">GQL</div>
+      <div class="bar-track"><div class="bar-fill gql" id="barGqlp95">—</div></div>
+    </div>
+  </div>
+  <div class="bar-group">
+    <div class="bg-label">Payload size (bytes) — lower is better</div>
+    <div class="bar-row">
+      <div class="br-name rest">REST</div>
+      <div class="bar-track"><div class="bar-fill rest" id="barRestB">—</div></div>
+    </div>
+    <div class="bar-row">
+      <div class="br-name gql">GQL</div>
+      <div class="bar-track"><div class="bar-fill gql" id="barGqlB">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- TWO COL: throughput + p95 breakdown -->
+<div class="two-col">
+  <div class="stat-panel">
+    <div class="sp-title">Throughput & Timing</div>
+    <div class="sp-row"><span class="sp-key">REST RPS</span><span class="sp-val rest" id="spRestRps">—</span></div>
+    <div class="sp-row"><span class="sp-key">GQL RPS</span><span class="sp-val gql" id="spGqlRps">—</span></div>
+    <div class="sp-row"><span class="sp-key">REST total time</span><span class="sp-val rest" id="spRestTotal">—</span></div>
+    <div class="sp-row"><span class="sp-key">GQL total time</span><span class="sp-val gql" id="spGqlTotal">—</span></div>
+    <div class="sp-row"><span class="sp-key">Faster server</span><span class="sp-val gold" id="spFaster">—</span></div>
+  </div>
+  <div class="stat-panel">
+    <div class="sp-title">Latency Percentiles (ms)</div>
+    <div class="sp-row"><span class="sp-key">REST p50</span><span class="sp-val rest" id="spRestp50">—</span></div>
+    <div class="sp-row"><span class="sp-key">GQL p50</span><span class="sp-val gql" id="spGqlp50">—</span></div>
+    <div class="sp-row"><span class="sp-key">REST p95</span><span class="sp-val rest" id="spRestp95">—</span></div>
+    <div class="sp-row"><span class="sp-key">GQL p95</span><span class="sp-val gql" id="spGqlp95">—</span></div>
+    <div class="sp-row"><span class="sp-key">REST p99</span><span class="sp-val rest" id="spRestp99">—</span></div>
+    <div class="sp-row"><span class="sp-key">GQL p99</span><span class="sp-val gql" id="spGqlp99">—</span></div>
+  </div>
+</div>
+
+<!-- ERROR RATE -->
+<div class="sec-title">Error Rate</div>
+<div class="error-panel">
+  <div class="error-row">
+    <div class="er-label rest">REST</div>
+    <div class="er-bar"><div class="er-fill rest" id="errRestFill"></div></div>
+    <div class="er-num rest" id="errRestNum">0.0%</div>
+  </div>
+  <div class="error-row">
+    <div class="er-label gql">GraphQL</div>
+    <div class="er-bar"><div class="er-fill gql" id="errGqlFill"></div></div>
+    <div class="er-num gql" id="errGqlNum">0.0%</div>
+  </div>
+  <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+    Paper finding: REST held 0% error rate at 2000 VU; GraphQL reached 4% at saturation (94% CPU)
+  </div>
+</div>
+
+<!-- PAYLOAD REDUCTION -->
+<div class="sec-title">Payload Reduction Factor Pr = (1 − GQL/REST) × 100%</div>
+<div class="pr-panel">
+  <div class="pr-row">
+    <div class="pr-label">Latest run</div>
+    <div class="pr-track"><div class="pr-fill" id="prLatest"></div></div>
+  </div>
+  <div class="pr-row">
+    <div class="pr-label">Tier 1 (shallow)</div>
+    <div class="pr-track"><div class="pr-fill" id="prT1"></div></div>
+  </div>
+  <div class="pr-row">
+    <div class="pr-label">Tier 2 (relational)</div>
+    <div class="pr-track"><div class="pr-fill" id="prT2"></div></div>
+  </div>
+  <div class="pr-row">
+    <div class="pr-label">Tier 3 (nested)</div>
+    <div class="pr-track"><div class="pr-fill" id="prT3"></div></div>
+  </div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;">
+    Paper findings: Tier1=66.6% · Tier2=82.1% · Tier3=88.1% · Peak burst=94%
+  </div>
+</div>
+
+<!-- VERDICT -->
+<div class="sec-title">Verdict</div>
+<div class="verdict">
+  <div class="v-card">
+    <div class="v-dim">Speed (latency)</div>
+    <div class="v-winner" id="vSpeed">—</div>
+    <div class="v-detail" id="vSpeedD">run benchmark first</div>
+  </div>
+  <div class="v-card">
+    <div class="v-dim">Throughput (RPS)</div>
+    <div class="v-winner" id="vRps">—</div>
+    <div class="v-detail" id="vRpsD">—</div>
+  </div>
+  <div class="v-card">
+    <div class="v-dim">Payload efficiency</div>
+    <div class="v-winner" id="vPayload">—</div>
+    <div class="v-detail" id="vPayloadD">—</div>
+  </div>
+  <div class="v-card">
+    <div class="v-dim">HTTP round-trips</div>
+    <div class="v-winner" id="vCalls">—</div>
+    <div class="v-detail" id="vCallsD">—</div>
+  </div>
+  <div class="v-card">
+    <div class="v-dim">Error resilience</div>
+    <div class="v-winner" id="vErr">—</div>
+    <div class="v-detail" id="vErrD">—</div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="sec-title">Run Log</div>
+<div class="log-panel">
+  <div class="log-header">
+    <span class="log-title">benchmark output</span>
+    <button class="btn" style="font-size:10px;padding:4px 10px;" onclick="clearLog()">clear</button>
+  </div>
+  <div class="log-body" id="logBody">
+    <div class="log-line"><span class="ts">[ready]</span> Configure test above and click Run Benchmark</div>
+  </div>
+</div>
+
+<footer>
+  <span>REST → localhost:3001 · GraphQL → localhost:3002/graphql · data: dummyjson.com</span>
+  <span>Metrics per: Saleh et al. [3] · Niswar et al. [4] · paper methodology §III-D</span>
+</footer>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const REST_BASE = 'http://localhost:3001';
+const GQL_BASE  = 'http://localhost:3002/graphql';
+
+// ── Stored tier results for Pr chart ──────────────────────────────────────
+const tierPr = { t1: null, t2: null, t3: null };
+
+// ── Query configs ──────────────────────────────────────────────────────────
+function getQueryConfig(tier, uid) {
+  const configs = {
+    shallow: {
+      label: 'Tier 1 · Shallow',
+      restFn: () => `${REST_BASE}/users/${uid}`,
+      restCalls: 1,
+      gqlBody: { query: `query { user(id: ${uid}) { id firstName email } }` },
+      gqlCalls: 1,
+    },
+    relational: {
+      label: 'Tier 2 · Relational',
+      restFn: async () => {
+        // two calls: user + posts
+        const [u, p] = await Promise.all([
+          timed(() => fetchRest(`${REST_BASE}/users/${uid}`)),
+          timed(() => fetchRest(`${REST_BASE}/users/${uid}/posts`)),
+        ]);
+        return { combined: true, results: [u, p] };
+      },
+      restCalls: 2,
+      gqlBody: {
+        query: `query { user(id: ${uid}) {
+          id firstName lastName email
+          posts { id title views }
+        }}`
+      },
+      gqlCalls: 1,
+    },
+    nested: {
+      label: 'Tier 3 · Nested',
+      restFn: () => `${REST_BASE}/users/${uid}/full`,
+      restCalls: 3,
+      gqlBody: {
+        query: `query { user(id: ${uid}) {
+          id firstName lastName email phone age
+          posts { id title body views tags }
+          todos { id todo completed }
+        }}`
+      },
+      gqlCalls: 1,
+    },
+    list: {
+      label: 'Products List (10)',
+      restFn: () => `${REST_BASE}/products?limit=10`,
+      restCalls: 1,
+      gqlBody: {
+        query: `query { products(limit: 10) {
+          products { id title price rating category thumbnail }
+          total
+        }}`
+      },
+      gqlCalls: 1,
+    },
+    'list-large': {
+      label: 'Products List (100)',
+      restFn: () => `${REST_BASE}/products?limit=100`,
+      restCalls: 1,
+      gqlBody: {
+        query: `query { products(limit: 100) {
+          products { id title price rating category thumbnail availabilityStatus }
+          total
+        }}`
+      },
+      gqlCalls: 1,
+    },
+    'posts-list': {
+      label: 'Posts List (30)',
+      restFn: () => `${REST_BASE}/posts?limit=30`,
+      restCalls: 1,
+      gqlBody: {
+        query: `query { posts(limit: 30) {
+          posts { id title tags views reactions { likes dislikes } }
+          total
+        }}`
+      },
+      gqlCalls: 1,
+    },
+  };
+  return configs[tier];
+}
+
+// ── Fetch helpers ──────────────────────────────────────────────────────────
+async function fetchRest(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  return { bytes: new TextEncoder().encode(text).length, ok: true };
+}
+
+async function fetchGql(body) {
+  const res = await fetch(GQL_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  const json = JSON.parse(text);
+  if (json.errors) throw new Error(json.errors[0].message);
+  return { bytes: new TextEncoder().encode(text).length, ok: true };
+}
+
+async function timed(fn) {
+  const t0 = performance.now();
+  const result = await fn();
+  return { ...result, ms: Math.round(performance.now() - t0) };
+}
+
+// ── Percentile calc ────────────────────────────────────────────────────────
+function percentile(arr, p) {
+  const sorted = [...arr].sort((a,b) => a-b);
+  const idx = Math.ceil((p/100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
+}
+
+// ── Log ────────────────────────────────────────────────────────────────────
+function log(msg, cls='') {
+  const lb = document.getElementById('logBody');
+  const ts = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  lb.innerHTML += `<div class="log-line"><span class="ts">[${ts}]</span> <span class="${cls}">${msg}</span></div>`;
+  lb.scrollTop = lb.scrollHeight;
+}
+function clearLog() {
+  document.getElementById('logBody').innerHTML = '';
+}
+
+// ── Progress ───────────────────────────────────────────────────────────────
+function setProgress(pct) {
+  const wrap = document.getElementById('progressWrap');
+  const fill = document.getElementById('progressFill');
+  if (pct === 0) { wrap.classList.remove('show'); return; }
+  wrap.classList.add('show');
+  fill.style.width = pct + '%';
+  fill.style.background = pct < 50 ? 'var(--rest)' : pct < 80 ? 'var(--gold)' : 'var(--gql)';
+}
+
+// ── Format helpers ─────────────────────────────────────────────────────────
+function fmtBytes(b) {
+  if (b >= 1048576) return (b/1048576).toFixed(2)+'MB';
+  if (b >= 1024)    return (b/1024).toFixed(1)+'KB';
+  return b+'B';
+}
+function winner(a, b, lower=true) {
+  if (a === b) return 'tie';
+  return lower ? (a < b ? 'REST' : 'GQL') : (a > b ? 'REST' : 'GQL');
+}
+
+// ── Server health check ────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    await fetch(`${REST_BASE}/health`);
+    document.getElementById('dotRest').className = 'dot up';
+  } catch { document.getElementById('dotRest').className = 'dot down'; }
+  try {
+    await fetch(`${GQL_BASE}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:'{"query":"{__typename}"}' });
+    document.getElementById('dotGql').className = 'dot up';
+  } catch { document.getElementById('dotGql').className = 'dot down'; }
+}
+checkHealth();
+setInterval(checkHealth, 15000);
+
+// ── Core benchmark runner ──────────────────────────────────────────────────
+async function runOneTier(tier, concurrency, iterations, uid) {
+  const cfg = getQueryConfig(tier, uid);
+  const total = concurrency * iterations;
+  log(`Starting: ${cfg.label} · ${concurrency} VU × ${iterations} iter = ${total} total requests`, 'ok');
+
+  const restTimes = [], gqlTimes = [];
+  let restBytes = 0, gqlBytes = 0;
+  let restErrors = 0, gqlErrors = 0;
+
+  const batchRest = async () => {
+    const batch = Array.from({length: concurrency}, async () => {
+      for (let i = 0; i < iterations; i++) {
+        try {
+          let r;
+          if (typeof cfg.restFn === 'function') {
+            const url = cfg.restFn();
+            if (typeof url === 'string') {
+              r = await timed(() => fetchRest(url));
+            } else {
+              // relational — combined fetch
+              const t0 = performance.now();
+              const [a, b] = await Promise.all([
+                fetchRest(`${REST_BASE}/users/${uid}`),
+                fetchRest(`${REST_BASE}/users/${uid}/posts`),
+              ]);
+              r = { ms: Math.round(performance.now()-t0), bytes: a.bytes + b.bytes, ok: true };
+            }
+          }
+          restTimes.push(r.ms);
+          restBytes = r.bytes;
+        } catch(e) {
+          restErrors++;
+          log(`REST error: ${e.message}`, 'err');
+        }
+      }
+    });
+    await Promise.all(batch);
+  };
+
+  const batchGql = async () => {
+    const batch = Array.from({length: concurrency}, async () => {
+      for (let i = 0; i < iterations; i++) {
+        try {
+          const r = await timed(() => fetchGql(cfg.gqlBody));
+          gqlTimes.push(r.ms);
+          gqlBytes = r.bytes;
+        } catch(e) {
+          gqlErrors++;
+          log(`GQL error: ${e.message}`, 'err');
+        }
+      }
+    });
+    await Promise.all(batch);
+  };
+
+  const wallStart = performance.now();
+  await Promise.all([batchRest(), batchGql()]);
+  const wallMs = performance.now() - wallStart;
+
+  // Compute stats
+  const rMean  = restTimes.length ? Math.round(restTimes.reduce((a,b)=>a+b,0)/restTimes.length) : 0;
+  const gMean  = gqlTimes.length  ? Math.round(gqlTimes.reduce((a,b)=>a+b,0)/gqlTimes.length)   : 0;
+  const rp50   = percentile(restTimes, 50);
+  const rp95   = percentile(restTimes, 95);
+  const rp99   = percentile(restTimes, 99);
+  const gp50   = percentile(gqlTimes, 50);
+  const gp95   = percentile(gqlTimes, 95);
+  const gp99   = percentile(gqlTimes, 99);
+  const rMin   = Math.min(...restTimes);
+  const rMax   = Math.max(...restTimes);
+  const gMin   = Math.min(...gqlTimes);
+  const gMax   = Math.max(...gqlTimes);
+
+  const rRps = restTimes.length ? +(restTimes.length / (wallMs/1000)).toFixed(1) : 0;
+  const gRps = gqlTimes.length  ? +(gqlTimes.length  / (wallMs/1000)).toFixed(1) : 0;
+
+  const rErrRate = +((restErrors / (restTimes.length + restErrors || 1)) * 100).toFixed(2);
+  const gErrRate = +((gqlErrors  / (gqlTimes.length  + gqlErrors  || 1)) * 100).toFixed(2);
+
+  const pr = restBytes > 0 ? +((1 - gqlBytes/restBytes)*100).toFixed(1) : 0;
+
+  log(`REST  · mean=${rMean}ms · p95=${rp95}ms · rps=${rRps} · size=${fmtBytes(restBytes)} · err=${rErrRate}%`, 'rest');
+  log(`GQL   · mean=${gMean}ms · p95=${gp95}ms · rps=${gRps} · size=${fmtBytes(gqlBytes)} · err=${gErrRate}%`, 'gql');
+  log(`Pr=${pr}% · REST calls=${cfg.restCalls} · GQL calls=${cfg.gqlCalls}`, 'ok');
+
+  return {
+    tier, cfg, rMean, gMean, rp50, rp95, rp99, gp50, gp95, gp99,
+    rMin, rMax, gMin, gMax, rRps, gRps,
+    restBytes, gqlBytes, pr,
+    rErrRate, gErrRate,
+    restCalls: cfg.restCalls, gqlCalls: cfg.gqlCalls,
+    wallMs,
+  };
+}
+
+// ── Update UI ──────────────────────────────────────────────────────────────
+function updateUI(res) {
+  const set = (id, val) => { const el=document.getElementById(id); if(el) el.textContent=val; };
+  const setColor = (id, color) => { const el=document.getElementById(id); if(el) el.style.color=color; };
+
+  // Core metrics
+  set('mRestMs',     res.rMean);
+  set('mGqlMs',      res.gMean);
+  set('mRestp95',    res.rp95);
+  set('mGqlp95',     res.gp95);
+  set('mRestRps',    res.rRps);
+  set('mGqlRps',     res.gRps);
+  set('mRestBytes',  fmtBytes(res.restBytes));
+  set('mGqlBytes',   fmtBytes(res.gqlBytes));
+  set('mPr',         res.pr > 0 ? res.pr + '%' : (Math.abs(res.pr)+'% (REST smaller)'));
+  set('mRestErr',    res.rErrRate + '%');
+  set('mGqlErr',     res.gErrRate + '%');
+  set('mRestCalls',  res.restCalls);
+  set('mGqlCalls',   res.gqlCalls);
+  set('mRestMinMax', res.rMin + ' / ' + res.rMax);
+  set('mGqlMinMax',  res.gMin + ' / ' + res.gMax);
+
+  // colour winner for mean latency
+  const fasterMs = res.rMean < res.gMean ? 'rest' : 'gql';
+  setColor('mRestMs', fasterMs==='rest' ? 'var(--green)' : 'var(--text)');
+  setColor('mGqlMs',  fasterMs==='gql'  ? 'var(--green)' : 'var(--text)');
+
+  // Stat panels
+  set('spRestRps',   res.rRps + ' req/s');
+  set('spGqlRps',    res.gRps + ' req/s');
+  set('spRestTotal', res.wallMs.toFixed(0) + 'ms wall');
+  set('spGqlTotal',  '(parallel run)');
+  set('spFaster',    res.rMean < res.gMean ? '🔵 REST' : '🔴 GraphQL');
+  set('spRestp50', res.rp50); set('spGqlp50', res.gp50);
+  set('spRestp95', res.rp95); set('spGqlp95', res.gp95);
+  set('spRestp99', res.rp99); set('spGqlp99', res.gp99);
+
+  // Bars
+  const maxMs = Math.max(res.rMean, res.gMean, 1);
+  const maxP95 = Math.max(res.rp95, res.gp95, 1);
+  const maxB   = Math.max(res.restBytes, res.gqlBytes, 1);
+
+  const setBar = (id, val, max, label) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.width = (val/max*100)+'%';
+    el.textContent = label;
+  };
+  setBar('barRestMs', res.rMean, maxMs, res.rMean+'ms');
+  setBar('barGqlMs',  res.gMean, maxMs, res.gMean+'ms');
+  setBar('barRestp95', res.rp95, maxP95, res.rp95+'ms');
+  setBar('barGqlp95',  res.gp95, maxP95, res.gp95+'ms');
+  setBar('barRestB', res.restBytes, maxB, fmtBytes(res.restBytes));
+  setBar('barGqlB',  res.gqlBytes,  maxB, fmtBytes(res.gqlBytes));
+
+  // Error bars
+  const maxErr = Math.max(res.rErrRate, res.gErrRate, 1);
+  const setErr = (id, num, max, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.width = (Math.max(val,0)/max*100)+'%';
+    el.textContent = val + '%';
+    document.getElementById(num).textContent = val + '%';
+  };
+  setErr('errRestFill', 'errRestNum', maxErr, res.rErrRate);
+  setErr('errGqlFill',  'errGqlNum',  maxErr, res.gErrRate);
+
+  // Payload reduction
+  const setPr = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const pct = Math.max(0, Math.min(val, 100));
+    el.style.width = pct + '%';
+    el.textContent = pct + '%';
+  };
+  setPr('prLatest', res.pr);
+
+  // Tier cards
+  const tierMap = { shallow:'1', relational:'2', nested:'3' };
+  const t = tierMap[res.tier];
+  if (t) {
+    set(`t${t}rm`, res.rMean + 'ms');
+    set(`t${t}rb`, fmtBytes(res.restBytes));
+    set(`t${t}gm`, res.gMean + 'ms');
+    set(`t${t}gb`, fmtBytes(res.gqlBytes));
+    document.getElementById(`tc${t}`).className = 'tier-card done-rest done-gql';
+    tierPr['t'+t] = res.pr;
+    setPr('prT'+t, res.pr);
+  }
+
+  // Verdict
+  const vSet = (id, did, text, detail, color) => {
+    set(id, text); set(did, detail);
+    setColor(id, color);
+  };
+  vSet('vSpeed', 'vSpeedD',
+    res.rMean < res.gMean ? '🔵 REST faster' : '🔴 GraphQL faster',
+    `Δ ${Math.abs(res.rMean - res.gMean)}ms mean`,
+    res.rMean < res.gMean ? 'var(--rest)' : 'var(--gql)'
+  );
+  vSet('vRps', 'vRpsD',
+    res.rRps > res.gRps ? '🔵 REST' : '🔴 GraphQL',
+    `${res.rRps} vs ${res.gRps} req/s`,
+    res.rRps > res.gRps ? 'var(--rest)' : 'var(--gql)'
+  );
+  vSet('vPayload', 'vPayloadD',
+    res.pr > 0 ? '🔴 GraphQL' : '🔵 REST',
+    res.pr > 0 ? `GraphQL −${res.pr}% smaller` : `REST smaller`,
+    res.pr > 0 ? 'var(--gql)' : 'var(--rest)'
+  );
+  vSet('vCalls', 'vCallsD',
+    res.restCalls > res.gqlCalls ? '🔴 GraphQL (fewer calls)' : res.restCalls === res.gqlCalls ? 'Tie' : '🔵 REST',
+    `REST: ${res.restCalls} · GQL: ${res.gqlCalls}`,
+    res.restCalls > res.gqlCalls ? 'var(--gql)' : 'var(--rest)'
+  );
+  vSet('vErr', 'vErrD',
+    res.rErrRate <= res.gErrRate ? '🔵 REST' : '🔴 GraphQL',
+    `REST ${res.rErrRate}% · GQL ${res.gErrRate}%`,
+    res.rErrRate <= res.gErrRate ? 'var(--rest)' : 'var(--gql)'
+  );
+}
+
+// ── Public: run single benchmark ──────────────────────────────────────────
+async function runBenchmark() {
+  const btn  = document.getElementById('runBtn');
+  const tier = document.getElementById('tier').value;
+  const conc = +document.getElementById('concurrency').value;
+  const iter = +document.getElementById('iterations').value;
+  const uid  = document.getElementById('userId').value;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  setProgress(10);
+
+  try {
+    setProgress(30);
+    const res = await runOneTier(tier, conc, iter, uid);
+    setProgress(90);
+    updateUI(res);
+    setProgress(100);
+    setTimeout(() => setProgress(0), 600);
+  } catch(e) {
+    log('Fatal: ' + e.message, 'err');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ Run Benchmark';
+}
+
+// ── Run all 3 tiers sequentially ──────────────────────────────────────────
+async function runAllTiers() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  const uid = document.getElementById('userId').value;
+  const conc = +document.getElementById('concurrency').value;
+  const iter = +document.getElementById('iterations').value;
+
+  log('═══ Running All 3 Tiers ═══', 'ok');
+  const tiers = ['shallow','relational','nested'];
+  for (let i = 0; i < tiers.length; i++) {
+    setProgress(Math.round((i/3)*90)+5);
+    document.getElementById(`tc${i+1}`).className = 'tier-card active';
+    const res = await runOneTier(tiers[i], conc, iter, uid);
+    updateUI(res);
+  }
+  setProgress(100);
+  setTimeout(()=>setProgress(0), 600);
+  log('═══ All Tiers Complete ═══', 'ok');
+  btn.disabled = false;
+}
+
+// ── Stress test ───────────────────────────────────────────────────────────
+async function runStress() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  const uid = document.getElementById('userId').value;
+  log('═══ STRESS TEST: Tier3 · 50 VU × 5 ═══', 'warn');
+  setProgress(15);
+  const res = await runOneTier('nested', 50, 5, uid);
+  setProgress(100);
+  updateUI(res);
+  setTimeout(()=>setProgress(0), 600);
+  log(`Stress complete. REST p95=${res.rp95}ms · GQL p95=${res.gp95}ms`, 'ok');
+  btn.disabled = false;
+}
+
+function clearResults() {
+  ['mRestMs','mGqlMs','mRestp95','mGqlp95','mRestRps','mGqlRps',
+   'mRestBytes','mGqlBytes','mPr','mRestErr','mGqlErr','mRestCalls','mGqlCalls',
+   'mRestMinMax','mGqlMinMax','spRestRps','spGqlRps','spRestTotal','spGqlTotal',
+   'spFaster','spRestp50','spGqlp50','spRestp95','spGqlp95','spRestp99','spGqlp99',
+   'errRestNum','errGqlNum','vSpeed','vSpeedD','vRps','vRpsD','vPayload','vPayloadD',
+   'vCalls','vCallsD','vErr','vErrD',
+   't1rm','t1rb','t1gm','t1gb','t2rm','t2rb','t2gm','t2gb','t3rm','t3rb','t3gm','t3gb',
+  ].forEach(id => { const el=document.getElementById(id); if(el) el.textContent='—'; });
+  ['barRestMs','barGqlMs','barRestp95','barGqlp95','barRestB','barGqlB',
+   'errRestFill','errGqlFill','prLatest','prT1','prT2','prT3'
+  ].forEach(id => { const el=document.getElementById(id); if(el) el.style.width='0'; });
+  clearLog();
+  log('Results cleared. Ready for new benchmark run.');
+}
+</script>
+</body>
+</html>
